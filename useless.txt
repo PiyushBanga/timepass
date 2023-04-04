@@ -1,0 +1,239 @@
+from django.contrib.auth.models import AbstractUser
+
+class User(AbstractUser):
+    is_student = models.BooleanField(default=False)
+    is_teacher = models.BooleanField(default=False)
+    # add any additional fields as needed
+
+auth/forms.py
+
+from django import forms
+from django.contrib.auth.forms import UserCreationForm
+from .models import User
+
+class StudentRegistrationForm(UserCreationForm):
+    class Meta:
+        model = User
+        fields = ('username', 'email', 'password1', 'password2')
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        user.is_student = True
+        if commit:
+            user.save()
+        return user
+
+class TeacherRegistrationForm(UserCreationForm):
+    class Meta:
+        model = User
+        fields = ('username', 'email', 'password1', 'password2')
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        user.is_teacher = True
+        if commit:
+            user.save()
+        return user
+
+
+auth/views.py
+from django.shortcuts import render, redirect
+from django.contrib.auth import login, authenticate
+from .forms import StudentRegistrationForm, TeacherRegistrationForm
+
+def student_register(request):
+    if request.method == 'POST':
+        form = StudentRegistrationForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            login(request, user)
+            return redirect('home')
+    else:
+        form = StudentRegistrationForm()
+    return render(request, 'auth/register.html', {'form': form})
+
+def teacher_register(request):
+    if request.method == 'POST':
+        form = TeacherRegistrationForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            login(request, user)
+            return redirect('home')
+    else:
+        form = TeacherRegistrationForm()
+    return render(request, 'auth/register.html', {'form': form})
+
+
+
+
+
+from django.shortcuts import render, redirect
+from django.contrib.auth import login, authenticate
+from .forms import StudentRegistrationForm, TeacherRegistrationForm
+
+def student_register(request):
+    if request.method == 'POST':
+        form = StudentRegistrationForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            login(request, user)
+            return redirect('student_dashboard')
+    else:
+        form = StudentRegistrationForm()
+    return render(request, 'auth/register.html', {'form': form})
+
+def teacher_register(request):
+    if request.method == 'POST':
+        form = TeacherRegistrationForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            login(request, user)
+            return redirect('teacher_dashboard')
+    else:
+        form = TeacherRegistrationForm()
+    return render(request, 'auth/register.html', {'form': form})
+
+def student_dashboard(request):
+    return render(request, 'auth/student_dashboard.html')
+
+def teacher_dashboard(request):
+    return render(request, 'auth/teacher_dashboard.html')
+
+
+
+
+class Student(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True)
+    # add any additional fields as needed, e.g.
+    first_name = models.CharField(max_length=50)
+    last_name = models.CharField(max_length=50)
+    email = models.EmailField()
+
+    def __str__(self):
+        return self.user.username
+
+
+
+class StudentForm(forms.ModelForm):
+    class Meta:
+        model = Student
+        fields = ('first_name', 'last_name', 'email')
+
+from .models import Student
+
+def student_dashboard(request):
+    student = Student.objects.get(user=request.user)
+    form = StudentForm(instance=student)
+    return render(request, 'auth/student_dashboard.html', {'student': student, 'form': form})
+
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>Student Dashboard</h2>
+<p>Welcome, {{ student.user.username }}!</p>
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Update Information</button>
+</form>
+{% endblock %}
+
+def student_register(request):
+    if request.method == 'POST':
+        form = StudentRegistrationForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            student = Student(user=user, first_name=user.first_name, last_name=user.last_name, email=user.email)
+            student.save()
+            login(request, user)
+            return redirect('student_dashboard')
+    else:
+        form = StudentRegistrationForm()
+    return render(request, 'auth/register.html', {'form': form})
+
+
+class Class(models.Model):
+    name = models.CharField(max_length=50)
+
+    def __str__(self):
+        return self.name
+
+
+class Enrollment(models.Model):
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    class_name = models.ForeignKey(Class, on_delete=models.CASCADE)
+
+    def __str__(self):
+        return f"{self.student.user.username} in {self.class_name}"
+
+class TeacherDashboardForm(forms.Form):
+    class_name = forms.ModelChoiceField(queryset=Class.objects.all())
+
+from .models import Class, Enrollment
+
+def teacher_dashboard(request):
+    if request.method == 'POST':
+        form = TeacherDashboardForm(request.POST)
+        if form.is_valid():
+            class_name = form.cleaned_data['class_name']
+            students = Enrollment.objects.filter(class_name=class_name)
+            return render(request, 'auth/teacher_dashboard.html', {'class_name': class_name, 'students': students})
+    else:
+        form = TeacherDashboardForm()
+    return render(request, 'auth/teacher_dashboard_select_class.html', {'form': form})
+
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>Teacher Dashboard</h2>
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Select Class</button>
+</form>
+{% endblock %}
+
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>Teacher Dashboard</h2>
+<p>Class: {{ class_name }}</p>
+<table>
+    <thead>
+        <tr>
+            <th>Student</th>
+            <th>First Name</th>
+            <th>Last Name</th>
+            <th>Email</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for enrollment in students %}
+        <tr>
+            <td>{{ enrollment.student.user.username }}</td>
+            <td>{{ enrollment.student.first_name }}</td>
+            <td>{{ enrollment.student.last_name }}</td>
+            <td>{{ enrollment.student.email }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
+
+def teacher_register(request):
+    if request.method == 'POST':
+        form = TeacherRegistrationForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            teacher = Teacher(user=user, first_name=user.first_name, last_name=user.last_name, email=user.email)
+            teacher.save()
+            class_name = form.cleaned_data['class_name']
+            new_class = Class(name=class_name)
+            new_class.save()
+            login(request, user)
+            return redirect('teacher_dashboard')
+    else:
+        form = TeacherRegistrationForm()
+
+
+
